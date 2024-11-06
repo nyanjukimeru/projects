@@ -1,0 +1,75 @@
+import os
+from osgeo import gdal
+import math
+
+def calculate_iou(bb1, bb2):
+    x_left = max(bb1[0], bb2[0])
+    y_top = max(bb1[1], bb2[1])
+    x_right = min(bb1[2], bb2[2])
+    y_bottom = min(bb1[3], bb2[3])
+
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    bb1_area = (bb1[2] - bb1[0]) * (bb1[3] - bb1[1])
+    bb2_area = (bb2[2] - bb2[0]) * (bb2[3] - bb2[1])
+    iou = intersection_area / float(bb1_area + bb2_area - intersection_area)
+    iou = math.sqrt(iou) * 100
+    return iou
+
+def get_bounding_box(dataset):
+    geotransform = dataset.GetGeoTransform()
+    x_min = geotransform[0]
+    y_max = geotransform[3]
+    x_max = x_min + geotransform[1] * dataset.RasterXSize
+    y_min = y_max + geotransform[5] * dataset.RasterYSize
+    return (x_min, y_min, x_max, y_max)
+
+# Specify the folder where your strip folders are located
+base_folder = 'D:/Flights/'
+
+# Threshold for IoU results
+threshold = 50.0
+
+# List all subdirectories (strip folders) in the base folder
+strip_folders = [folder for folder in os.listdir(base_folder) if os.path.isdir(os.path.join(base_folder, folder))]
+
+# Iterate through strip folders
+for i in range(len(strip_folders) - 1):
+    reference_strip = strip_folders[i]
+    reference_folder_path = os.path.join(base_folder, reference_strip)
+    
+    # Load reference images from the current strip
+    reference_images = [file for file in os.listdir(reference_folder_path) if file.lower().endswith('.tif')]
+    
+    if reference_images:
+        for reference_image_file in reference_images:
+            reference_image_path = os.path.join(reference_folder_path, reference_image_file)
+            reference_dataset = gdal.Open(reference_image_path)
+            
+            # Compare with the next strip
+            comparison_strip = strip_folders[i + 1]
+            comparison_folder_path = os.path.join(base_folder, comparison_strip)
+            comparison_images = [file for file in os.listdir(comparison_folder_path) if file.lower().endswith('.tif')]
+            
+            if comparison_images:
+                for comparison_image_file in comparison_images:
+                    comparison_image_path = os.path.join(comparison_folder_path, comparison_image_file)
+                    comparison_dataset = gdal.Open(comparison_image_path)
+                    
+                    if reference_dataset is not None and comparison_dataset is not None:
+                        # Get bounding boxes for both reference and comparison images
+                        bb1 = get_bounding_box(reference_dataset)
+                        bb2 = get_bounding_box(comparison_dataset)
+                        
+                        # Calculate IoU
+                        iou_value = calculate_iou(bb1, bb2)
+                        
+                        # Check if IoU is above the threshold before printing
+                        if iou_value >= threshold:
+                            print(f'IoU between {reference_strip}/{reference_image_file} and {comparison_strip}/{comparison_image_file}: {iou_value:.2f}%')
+            else:
+                print(f"No GeoTIFF images found in {comparison_strip}.")
+    else:
+        print(f"No GeoTIFF images found in {reference_strip}.")

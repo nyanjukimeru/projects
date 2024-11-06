@@ -1,0 +1,63 @@
+from osgeo import gdal
+import cv2
+import math
+import os
+
+# Specify the folder containing GeoTIFF images
+image_folder = 'D:\Orthophotos'
+
+# Get a list of all GeoTIFF files in the folder
+image_files = [f for f in os.listdir(image_folder) if f.endswith('.tif')]
+image_files.sort()  # Sort the files alphabetically
+
+# Loop through the list of image files and calculate IoU for consecutive pairs
+for i in range(len(image_files) - 1):
+    image_path = os.path.join(image_folder, image_files[i])
+    image_path1 = os.path.join(image_folder, image_files[i + 1])
+
+    # Open the first GeoTIFF image
+    dataset = gdal.Open(image_path)
+    
+    # Open the second GeoTIFF image
+    dataset1 = gdal.Open(image_path1)
+
+    if dataset is None or dataset1 is None:
+        print(f"Failed to open one of the images: {image_path} or {image_path1}")
+    else:
+        # Get geotransform information and calculate bounding box coordinates for both images
+        geotransform = dataset.GetGeoTransform()
+        x_min = geotransform[0]
+        y_max = geotransform[3]
+        x_max = x_min + geotransform[1] * dataset.RasterXSize
+        y_min = y_max + geotransform[5] * dataset.RasterYSize
+
+        geotransform1 = dataset1.GetGeoTransform()
+        x_min1 = geotransform1[0]
+        y_max1 = geotransform1[3]
+        x_max1 = x_min1 + geotransform1[1] * dataset1.RasterXSize
+        y_min1 = y_max1 + geotransform1[5] * dataset1.RasterYSize
+
+        # Calculate the Intersection over Union (IoU) between the bounding boxes
+        def calculate_iou(bb1, bb2):
+            x_left = max(bb1['x_min'], bb2['x_min1'])
+            y_top = max(bb1['y_min'], bb2['y_min1'])
+            x_right = min(bb1['x_max'], bb2['x_max1'])
+            y_bottom = min(bb1['y_max'], bb2['y_max1'])
+
+            if x_right < x_left or y_bottom < y_top:
+                return 0.0
+
+            intersection_area = (x_right - x_left) * (y_bottom - y_top)
+            bb1_area = (bb1['x_max'] - bb1['x_min']) * (bb1['y_max'] - bb1['y_min'])
+            bb2_area = (bb2['x_max1'] - bb2['x_min1']) * (bb2['y_max1'] - bb2['y_min1'])
+            iou = intersection_area / float(bb1_area + bb2_area - intersection_area)
+            iou = math.sqrt(iou) * 100
+            return iou
+
+        # Define bounding box coordinates as dictionaries
+        bb1 = {'x_min': x_min, 'y_min': y_min, 'x_max': x_max, 'y_max': y_max}
+        bb2 = {'x_min1': x_min1, 'y_min1': y_min1, 'x_max1': x_max1, 'y_max1': y_max1}
+
+        # Calculate IoU
+        iou_value = calculate_iou(bb1, bb2)
+        print(f'Endlap between {image_files[i]} and {image_files[i + 1]} = {iou_value:.2f}%')
